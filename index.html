@@ -21,6 +21,7 @@
   .btn-small { padding: 4px 8px; font-size: 0.9em; background: #e67e22; }
   .btn-small:hover { background: #d35400; }
   .error { color: red; margin-top: 10px; }
+  #orderMsg { margin-top: 10px; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -94,11 +95,8 @@
 </div>
 
 <script>
-// REEMPLAZA esta URL por la de tu Web App correcta:
 const googleScriptURL = "https://script.google.com/macros/s/AKfycbzcS-lRsYaBx03tPHLBnFKrdXUG9Ukm3V9mOl15KEi8h_ZehkHPDdfQerpbsjKC4DDr/exec";
 
-
-// Manejo de vistas
 const catalogDiv = document.getElementById('catalog');
 const addProductDiv = document.getElementById('addProductForm');
 const orderDiv = document.getElementById('orderForm');
@@ -177,7 +175,6 @@ sectionButtons.forEach(btn => {
   };
 });
 
-// Manejo de tallas: solo para calzado
 const inputSeccion = document.getElementById('inputSeccion');
 const inputTallas = document.getElementById('inputTallas');
 const labelTallas = document.getElementById('labelTallas');
@@ -193,12 +190,9 @@ function updateTallasInput() {
   }
 }
 
-// Productos en localStorage
-// Estructura: [{nombre, precio, seccion, tallas: [..]}]
 function loadProducts() {
   const prods = localStorage.getItem('productos');
   if(prods) return JSON.parse(prods);
-  // Si no hay, cargamos unos básicos de ejemplo
   const defaultProds = [
     {nombre: 'Tenis Puma Smash', precio: 950, seccion: 'calzado', tallas: [22,23,24,25,26]},
     {nombre: 'Sandalias Verano', precio: 550, seccion: 'calzado', tallas: [22,23,24,25]},
@@ -302,35 +296,56 @@ formOrder.onsubmit = async e => {
   const productoIndex = parseInt(orderProductoSelect.value);
   const cantidad = parseInt(document.getElementById('orderCantidad').value);
   const productos = loadProducts().filter(p => p.seccion === seccion);
-  if(!nombre || isNaN(productoIndex) || productoIndex < 0 || productoIndex >= productos.length || isNaN(cantidad) || cantidad < 1) {
-    orderMsgDiv.textContent = 'Por favor, completa todos los campos correctamente.';
+
+  // Validaciones básicas
+  if(!nombre) {
+    orderMsgDiv.textContent = 'Por favor, ingresa tu nombre.';
+    orderMsgDiv.style.color = 'red';
+    return;
+  }
+  if(isNaN(productoIndex) || productoIndex < 0 || productoIndex >= productos.length) {
+    orderMsgDiv.textContent = 'Por favor, selecciona un producto válido.';
+    orderMsgDiv.style.color = 'red';
+    return;
+  }
+  if(isNaN(cantidad) || cantidad < 1) {
+    orderMsgDiv.textContent = 'Por favor, ingresa una cantidad válida.';
     orderMsgDiv.style.color = 'red';
     return;
   }
   const producto = productos[productoIndex];
-  const talla = (seccion === 'calzado' && producto.tallas.length > 0) ? orderTallaSelect.value : '';
+  let talla = '';
+  if(seccion === 'calzado' && producto.tallas.length > 0) {
+    talla = orderTallaSelect.value;
+    if(!talla) {
+      orderMsgDiv.textContent = 'Por favor, selecciona una talla.';
+      orderMsgDiv.style.color = 'red';
+      return;
+    }
+  }
   
-  // Enviar pedido a Google Sheets
   try {
     const resp = await fetch(googleScriptURL, {
       method: 'POST',
       body: JSON.stringify({ nombre, producto: producto.nombre, cantidad, talla, seccion }),
       headers: { 'Content-Type': 'application/json' }
     });
-    if(resp.ok) {
+    const textResp = await resp.text();
+    console.log("Respuesta del servidor:", textResp);
+    if(resp.ok && textResp.includes("✅")) {
       orderMsgDiv.textContent = '✅ Pedido enviado correctamente.';
       orderMsgDiv.style.color = 'green';
       formOrder.reset();
     } else {
-      throw new Error('Error en el servidor');
+      throw new Error(textResp);
     }
   } catch(err) {
+    console.error("Error enviando pedido:", err);
     orderMsgDiv.textContent = '❌ Error al enviar el pedido. Intenta más tarde.';
     orderMsgDiv.style.color = 'red';
   }
 };
 
-// Inicializar
 showSection('calzado');
 updateTallasInput();
 </script>
