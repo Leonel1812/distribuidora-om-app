@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Distribuidora OM - App</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 10px; background: #f7f7f7; }
+  header { text-align: center; margin-bottom: 20px; }
+  h1 { color: #2c3e50; }
+  button { padding: 8px 15px; margin: 5px; cursor: pointer; background: #2980b9; color: white; border: none; border-radius: 4px; }
+  button:hover { background: #3498db; }
+  .section-selector button { background: #27ae60; }
+  .section-selector button:hover { background: #2ecc71; }
+  #catalog, #orderForm, #addProductForm { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+  ul { list-style: none; padding: 0; }
+  li { border-bottom: 1px solid #ddd; padding: 10px 0; display: flex; justify-content: space-between; align-items: center; }
+  label { display: block; margin-top: 10px; }
+  input, select { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+  .hidden { display: none; }
+  .btn-small { padding: 4px 8px; font-size: 0.9em; background: #e67e22; }
+  .btn-small:hover { background: #d35400; }
+  .error { color: red; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Distribuidora OM</h1>
+  <p>Catálogo y pedidos - Calzado & Papelería (ART.Papelería)</p>
+  <button id="btnShowCatalog">Ver Catálogo</button>
+  <button id="btnAddProduct">Agregar Producto</button>
+  <button id="btnShowOrder">Realizar Pedido</button>
+</header>
+
+<div id="catalog" class="hidden">
+  <h2>Catálogo de Productos</h2>
+  <div class="section-selector">
+    <button data-section="calzado" class="section-btn active">Calzado</button>
+    <button data-section="papeleria" class="section-btn">Papelería</button>
+  </div>
+  <ul id="productList"></ul>
+</div>
+
+<div id="addProductForm" class="hidden">
+  <h2>Agregar Producto</h2>
+  <form id="formAddProduct">
+    <label>Nombre o Modelo:
+      <input type="text" id="inputNombre" required />
+    </label>
+    <label>Precio (MXN):
+      <input type="number" id="inputPrecio" required min="1" />
+    </label>
+    <label>Sección:
+      <select id="inputSeccion">
+        <option value="calzado">Calzado</option>
+        <option value="papeleria">Papelería</option>
+      </select>
+    </label>
+    <label id="labelTallas">Tallas disponibles (separadas por coma):<br/>
+      <input type="text" id="inputTallas" placeholder="Ejemplo: 24,25,26" />
+    </label>
+    <button type="submit">Guardar Producto</button>
+    <button type="button" id="btnCancelAdd">Cancelar</button>
+    <div id="addError" class="error"></div>
+  </form>
+</div>
+
+<div id="orderForm" class="hidden">
+  <h2>Formulario de Pedido</h2>
+  <form id="formOrder">
+    <label>Nombre completo:
+      <input type="text" id="orderNombre" required />
+    </label>
+    <label>Sección:
+      <select id="orderSeccion">
+        <option value="calzado">Calzado</option>
+        <option value="papeleria">Papelería</option>
+      </select>
+    </label>
+    <label>Producto:
+      <select id="orderProducto" required></select>
+    </label>
+    <label id="labelOrderTalla" class="hidden">Talla:
+      <select id="orderTalla"></select>
+    </label>
+    <label>Cantidad:
+      <input type="number" id="orderCantidad" required min="1" value="1" />
+    </label>
+    <button type="submit">Enviar Pedido</button>
+    <button type="button" id="btnCancelOrder">Cancelar</button>
+    <div id="orderMsg"></div>
+  </form>
+</div>
+
+<script>
+// URL de tu Web App de Google Script para pedidos
+const googleScriptURL = "https://script.google.com/macros/s/AKfycbxS2sPuBkTYf7iei14a3e3DhtbkhaQN_ljdDvBCG-iNvMVIA3_TivRMSsdt_Fr0_0B_/exec";
+
+// Manejo de vistas
+const catalogDiv = document.getElementById('catalog');
+const addProductDiv = document.getElementById('addProductForm');
+const orderDiv = document.getElementById('orderForm');
+
+const btnShowCatalog = document.getElementById('btnShowCatalog');
+const btnAddProduct = document.getElementById('btnAddProduct');
+const btnShowOrder = document.getElementById('btnShowOrder');
+const btnCancelAdd = document.getElementById('btnCancelAdd');
+const btnCancelOrder = document.getElementById('btnCancelOrder');
+
+const productListUl = document.getElementById('productList');
+
+const formAddProduct = document.getElementById('formAddProduct');
+const addErrorDiv = document.getElementById('addError');
+
+const formOrder = document.getElementById('formOrder');
+const orderProductoSelect = document.getElementById('orderProducto');
+const orderTallaLabel = document.getElementById('labelOrderTalla');
+const orderTallaSelect = document.getElementById('orderTalla');
+const orderMsgDiv = document.getElementById('orderMsg');
+
+const orderSeccionSelect = document.getElementById('orderSeccion');
+const sectionButtons = document.querySelectorAll('.section-btn');
+
+let currentSection = "calzado";
+
+function showSection(section) {
+  currentSection = section;
+  catalogDiv.classList.remove('hidden');
+  addProductDiv.classList.add('hidden');
+  orderDiv.classList.add('hidden');
+  btnShowCatalog.disabled = true;
+  btnAddProduct.disabled = false;
+  btnShowOrder.disabled = false;
+  sectionButtons.forEach(b => b.classList.remove('active'));
+  document.querySelector(`.section-btn[data-section="${section}"]`).classList.add('active');
+  renderProductList(section);
+  populateOrderProducts(section);
+  orderTallaLabel.classList.add('hidden');
+}
+
+btnShowCatalog.onclick = () => showSection(currentSection);
+btnAddProduct.onclick = () => {
+  catalogDiv.classList.add('hidden');
+  addProductDiv.classList.remove('hidden');
+  orderDiv.classList.add('hidden');
+  btnShowCatalog.disabled = false;
+  btnAddProduct.disabled = true;
+  btnShowOrder.disabled = false;
+  addErrorDiv.textContent = '';
+  formAddProduct.reset();
+  updateTallasInput();
+};
+btnShowOrder.onclick = () => {
+  catalogDiv.classList.add('hidden');
+  addProductDiv.classList.add('hidden');
+  orderDiv.classList.remove('hidden');
+  btnShowCatalog.disabled = false;
+  btnAddProduct.disabled = false;
+  btnShowOrder.disabled = true;
+  orderMsgDiv.textContent = '';
+  formOrder.reset();
+  populateOrderProducts(orderSeccionSelect.value);
+};
+
+btnCancelAdd.onclick = () => {
+  showSection(currentSection);
+};
+btnCancelOrder.onclick = () => {
+  showSection(currentSection);
+};
+
+sectionButtons.forEach(btn => {
+  btn.onclick = () => {
+    showSection(btn.dataset.section);
+  };
+});
+
+// Manejo de tallas: solo para calzado
+const inputSeccion = document.getElementById('inputSeccion');
+const inputTallas = document.getElementById('inputTallas');
+const labelTallas = document.getElementById('labelTallas');
+
+inputSeccion.onchange = updateTallasInput;
+
+function updateTallasInput() {
+  if(inputSeccion.value === 'calzado') {
+    labelTallas.style.display = 'block';
+  } else {
+    labelTallas.style.display = 'none';
+    inputTallas.value = '';
+  }
+}
+
+// Productos en localStorage
+// Estructura: [{nombre, precio, seccion, tallas: [..]}]
+function loadProducts() {
+  const prods = localStorage.getItem('productos');
+  if(prods) return JSON.parse(prods);
+  // Si no hay, cargamos unos básicos de ejemplo
+  const defaultProds = [
+    {nombre: 'Tenis Puma Smash', precio: 950, seccion: 'calzado', tallas: [22,23,24,25,26]},
+    {nombre: 'Sandalias Verano', precio: 550, seccion: 'calzado', tallas: [22,23,24,25]},
+    {nombre: 'Cuaderno Profesional Norma', precio: 42, seccion: 'papeleria', tallas: []},
+    {nombre: 'Pluma BIC Azul', precio: 6, seccion: 'papeleria', tallas: []}
+  ];
+  localStorage.setItem('productos', JSON.stringify(defaultProds));
+  return defaultProds;
+}
+
+function saveProducts(prods) {
+  localStorage.setItem('productos', JSON.stringify(prods));
+}
+
+function renderProductList(seccion) {
+  const productos = loadProducts().filter(p => p.seccion === seccion);
+  productListUl.innerHTML = '';
+  if(productos.length === 0) {
+    productListUl.innerHTML = '<li>No hay productos en esta sección.</li>';
+    return;
+  }
+  productos.forEach(p => {
+    const li = document.createElement('li');
+    li.textContent = `${p.nombre} - $${p.precio}${p.seccion === 'calzado' && p.tallas.length > 0 ? ' - Tallas: ' + p.tallas.join(', ') : ''}`;
+    productListUl.appendChild(li);
+  });
+}
+
+formAddProduct.onsubmit = e => {
+  e.preventDefault();
+  addErrorDiv.textContent = '';
+  const nombre = document.getElementById('inputNombre').value.trim();
+  const precio = parseFloat(document.getElementById('inputPrecio').value);
+  const seccion = document.getElementById('inputSeccion').value;
+  const tallasRaw = document.getElementById('inputTallas').value.trim();
+  let tallas = [];
+  if(seccion === 'calzado' && tallasRaw) {
+    tallas = tallasRaw.split(',').map(t => t.trim()).filter(t => t).map(Number).filter(n => !isNaN(n));
+  }
+  if(!nombre || isNaN(precio) || precio <= 0) {
+    addErrorDiv.textContent = 'Por favor, completa el nombre y un precio válido.';
+    return;
+  }
+  const productos = loadProducts();
+  productos.push({nombre, precio, seccion, tallas});
+  saveProducts(productos);
+  showSection(seccion);
+};
+
+function populateOrderProducts(seccion) {
+  const productos = loadProducts().filter(p => p.seccion === seccion);
+  orderProductoSelect.innerHTML = '';
+  if(productos.length === 0) {
+    orderProductoSelect.innerHTML = '<option value="">-- Sin productos --</option>';
+    return;
+  }
+  productos.forEach((p, i) => {
+    const option = document.createElement('option');
+    option.value = i;
+    option.textContent = `${p.nombre} - $${p.precio}`;
+    orderProductoSelect.appendChild(option);
+  });
+  updateOrderTallas(seccion, 0);
+}
+
+orderSeccionSelect.onchange = () => {
+  populateOrderProducts(orderSeccionSelect.value);
+  orderMsgDiv.textContent = '';
+};
+
+orderProductoSelect.onchange = () => {
+  updateOrderTallas(orderSeccionSelect.value, parseInt(orderProductoSelect.value));
+};
+
+function updateOrderTallas(seccion, index) {
+  const productos = loadProducts().filter(p => p.seccion === seccion);
+  if(productos.length === 0) {
+    orderTallaLabel.classList.add('hidden');
+    return;
+  }
+  const prod = productos[index];
+  if(seccion === 'calzado' && prod.tallas.length > 0) {
+    orderTallaLabel.classList.remove('hidden');
+    orderTallaSelect.innerHTML = '';
+    prod.tallas.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = t;
+      orderTallaSelect.appendChild(opt);
+    });
+  } else {
+    orderTallaLabel.classList.add('hidden');
+  }
+}
+
+formOrder.onsubmit = async e => {
+  e.preventDefault();
+  orderMsgDiv.textContent = '';
+  const nombre = document.getElementById('orderNombre').value.trim();
+  const seccion = orderSeccionSelect.value;
+  const productoIndex = parseInt(orderProductoSelect.value);
+  const cantidad = parseInt(document.getElementById('orderCantidad').value);
+  const productos = loadProducts().filter(p => p.seccion === seccion);
+  if(!nombre || isNaN(productoIndex) || productoIndex < 0 || productoIndex >= productos.length || isNaN(cantidad) || cantidad < 1) {
+    orderMsgDiv.textContent = 'Por favor, completa todos los campos correctamente.';
+    orderMsgDiv.style.color = 'red';
+    return;
+  }
+  const producto = productos[productoIndex];
+  const talla = (seccion === 'calzado' && producto.tallas.length > 0) ? orderTallaSelect.value : '';
+  
+  // Enviar pedido a Google Sheets
+  try {
+    const resp = await fetch(googleScriptURL, {
+      method: 'POST',
+      body: JSON.stringify({ nombre, producto: producto.nombre, cantidad, talla, seccion }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if(resp.ok) {
+      orderMsgDiv.textContent = '✅ Pedido enviado correctamente.';
+      orderMsgDiv.style.color = 'green';
+      formOrder.reset();
+    } else {
+      throw new Error('Error en el servidor');
+    }
+  } catch(err) {
+    orderMsgDiv.textContent = '❌ Error al enviar el pedido. Intenta más tarde.';
+    orderMsgDiv.style.color = 'red';
+  }
+};
+
+// Inicializar
+showSection('calzado');
+updateTallasInput();
+</script>
+
+</body>
+</html>
