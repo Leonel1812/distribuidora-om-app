@@ -21,7 +21,6 @@
   .btn-small { padding: 4px 8px; font-size: 0.9em; background: #e67e22; }
   .btn-small:hover { background: #d35400; }
   .error { color: red; margin-top: 10px; }
-  #orderMsg { margin-top: 10px; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -95,8 +94,10 @@
 </div>
 
 <script>
-const googleScriptURL = "https://script.google.com/macros/s/AKfycbzcS-lRsYaBx03tPHLBnFKrdXUG9Ukm3V9mOl15KEi8h_ZehkHPDdfQerpbsjKC4DDr/exec";
+// URL correcta de tu Web App Google Script con CORS habilitado
+const googleScriptURL = "https://script.google.com/macros/s/AKfycbw8qJGX_Augo2xSbJF4Q417kGSFtWk_GIl9hMXYcp8B_eOFmTQk4W-2SSKT-z5yCcg/exec";
 
+// Manejo de vistas y elementos
 const catalogDiv = document.getElementById('catalog');
 const addProductDiv = document.getElementById('addProductForm');
 const orderDiv = document.getElementById('orderForm');
@@ -175,6 +176,7 @@ sectionButtons.forEach(btn => {
   };
 });
 
+// Manejo de tallas: solo para calzado
 const inputSeccion = document.getElementById('inputSeccion');
 const inputTallas = document.getElementById('inputTallas');
 const labelTallas = document.getElementById('labelTallas');
@@ -190,9 +192,12 @@ function updateTallasInput() {
   }
 }
 
+// Productos en localStorage
+// Estructura: [{nombre, precio, seccion, tallas: [..]}]
 function loadProducts() {
   const prods = localStorage.getItem('productos');
   if(prods) return JSON.parse(prods);
+  // Productos de ejemplo si no hay nada guardado
   const defaultProds = [
     {nombre: 'Tenis Puma Smash', precio: 950, seccion: 'calzado', tallas: [22,23,24,25,26]},
     {nombre: 'Sandalias Verano', precio: 550, seccion: 'calzado', tallas: [22,23,24,25]},
@@ -296,56 +301,36 @@ formOrder.onsubmit = async e => {
   const productoIndex = parseInt(orderProductoSelect.value);
   const cantidad = parseInt(document.getElementById('orderCantidad').value);
   const productos = loadProducts().filter(p => p.seccion === seccion);
-
-  // Validaciones básicas
-  if(!nombre) {
-    orderMsgDiv.textContent = 'Por favor, ingresa tu nombre.';
-    orderMsgDiv.style.color = 'red';
-    return;
-  }
-  if(isNaN(productoIndex) || productoIndex < 0 || productoIndex >= productos.length) {
-    orderMsgDiv.textContent = 'Por favor, selecciona un producto válido.';
-    orderMsgDiv.style.color = 'red';
-    return;
-  }
-  if(isNaN(cantidad) || cantidad < 1) {
-    orderMsgDiv.textContent = 'Por favor, ingresa una cantidad válida.';
+  if(!nombre || isNaN(productoIndex) || productoIndex < 0 || productoIndex >= productos.length || isNaN(cantidad) || cantidad < 1) {
+    orderMsgDiv.textContent = 'Por favor, completa todos los campos correctamente.';
     orderMsgDiv.style.color = 'red';
     return;
   }
   const producto = productos[productoIndex];
-  let talla = '';
-  if(seccion === 'calzado' && producto.tallas.length > 0) {
-    talla = orderTallaSelect.value;
-    if(!talla) {
-      orderMsgDiv.textContent = 'Por favor, selecciona una talla.';
-      orderMsgDiv.style.color = 'red';
-      return;
-    }
-  }
-  
+  const talla = (seccion === 'calzado' && producto.tallas.length > 0) ? orderTallaSelect.value : '';
+
+  // Enviar pedido a Google Sheets con POST y JSON
   try {
     const resp = await fetch(googleScriptURL, {
       method: 'POST',
-      body: JSON.stringify({ nombre, producto: producto.nombre, cantidad, talla, seccion }),
-      headers: { 'Content-Type': 'application/json' }
+      mode: 'cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre, producto: producto.nombre, cantidad, talla, seccion })
     });
-    const textResp = await resp.text();
-    console.log("Respuesta del servidor:", textResp);
-    if(resp.ok && textResp.includes("✅")) {
+    if(resp.ok) {
       orderMsgDiv.textContent = '✅ Pedido enviado correctamente.';
       orderMsgDiv.style.color = 'green';
       formOrder.reset();
     } else {
-      throw new Error(textResp);
+      throw new Error('Error en el servidor');
     }
   } catch(err) {
-    console.error("Error enviando pedido:", err);
     orderMsgDiv.textContent = '❌ Error al enviar el pedido. Intenta más tarde.';
     orderMsgDiv.style.color = 'red';
   }
 };
 
+// Inicializar la vista y tallas
 showSection('calzado');
 updateTallasInput();
 </script>
